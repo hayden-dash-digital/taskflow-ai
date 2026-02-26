@@ -1,18 +1,19 @@
 # TaskFlow — Full Build Specification
 
-> This document is a complete technical spec for building TaskFlow, a goal-driven task manager with collaborative sprints and an ambient AI assistant. Hand this to Claude Code and say "build this."
+> This document is a complete technical spec for building TaskFlow, a goal-driven task manager with collaborative sprints, hackathon war rooms, and an ambient AI assistant. Hand this to Claude Code and say "build this."
 
 ---
 
 ## 1. Product Overview
 
-**TaskFlow** is a personal-first, team-ready task manager built for agency operators and small teams. It combines a visual Kanban board, goal tracking with progress visualization, collaborative sprints with bottleneck detection, and an ambient AI assistant.
+**TaskFlow** is a personal-first, team-ready task manager built for agency operators and small teams. It combines a visual Kanban board, goal tracking with progress visualization, collaborative sprints with bottleneck detection, hackathon war rooms for focused team sessions, and an ambient AI assistant.
 
 **Target User:** Agency owner / small team lead who manages projects across clients and internal work. Needs something more visual and intelligent than Trello, less bloated than Jira.
 
 **Core Differentiators:**
 - Goals as first-class citizens with visual progress tracking
 - Collaborative sprints with swim lanes and friction detection
+- Hackathon mode — a virtual war room for focused team collaboration with its own task board, idea board, chat, and playlists
 - AI assistant that's ambient by default, chat when needed
 - Premium design — not generic SaaS, think Linear meets Dribbble
 
@@ -264,13 +265,114 @@ create table sprint_tasks (
 create table notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id),
-  type text not null, -- assigned, mentioned, sprint_update, blocked, message
+  type text not null, -- assigned, mentioned, sprint_update, blocked, message, hackathon_invite, hackathon_start
   title text not null,
   body text,
   card_id uuid references cards(id),
   sprint_task_id uuid references sprint_tasks(id),
+  hackathon_id uuid,
   is_read boolean default false,
   created_at timestamptz default now()
+);
+```
+
+### 4.10 Hackathons
+```sql
+create table hackathons (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid references workspaces(id),
+  name text not null,
+  description text,
+  theme text,                        -- optional theme/focus area
+  scheduled_start timestamptz not null,
+  scheduled_end timestamptz not null,
+  actual_start timestamptz,          -- null until leader kicks it off
+  actual_end timestamptz,            -- null until leader ends it
+  status text default 'scheduled',   -- scheduled, live, completed, cancelled
+  created_by uuid references users(id),
+  cover_color text default '#5B4AE4', -- accent color for the hackathon room
+  created_at timestamptz default now()
+);
+
+create table hackathon_participants (
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  user_id uuid references users(id),
+  rsvp_status text default 'pending', -- pending, accepted, declined
+  role text default 'participant',    -- organizer, participant
+  joined_at timestamptz,              -- when they actually entered the room
+  primary key (hackathon_id, user_id)
+);
+
+-- Idea board: sticky-note style cards for brainstorming
+create table hackathon_ideas (
+  id uuid primary key default gen_random_uuid(),
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  user_id uuid references users(id),
+  content text not null,
+  color text default '#EAB308',       -- sticky note color
+  votes integer default 0,
+  position_x float default 0,         -- free-form board positioning
+  position_y float default 0,
+  created_at timestamptz default now()
+);
+
+create table hackathon_idea_votes (
+  idea_id uuid references hackathon_ideas(id) on delete cascade,
+  user_id uuid references users(id),
+  primary key (idea_id, user_id)
+);
+
+-- Task board within the hackathon (separate from main board)
+create table hackathon_tasks (
+  id uuid primary key default gen_random_uuid(),
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  title text not null,
+  description text,
+  assignee_id uuid references users(id),
+  status text default 'todo',         -- todo, progress, done
+  priority text default 'medium',
+  position integer not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Hackathon goals (mini-goals within the session)
+create table hackathon_goals (
+  id uuid primary key default gen_random_uuid(),
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  title text not null,
+  is_completed boolean default false,
+  position integer not null,
+  created_at timestamptz default now()
+);
+
+-- Linked playlists and resources
+create table hackathon_resources (
+  id uuid primary key default gen_random_uuid(),
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  type text not null,                 -- playlist, link, document, figma, github
+  title text not null,
+  url text not null,
+  added_by uuid references users(id),
+  created_at timestamptz default now()
+);
+
+-- Real-time chat within the hackathon room
+create table hackathon_messages (
+  id uuid primary key default gen_random_uuid(),
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  user_id uuid references users(id),
+  text text not null,
+  is_pinned boolean default false,
+  created_at timestamptz default now()
+);
+
+-- Sprints created within a hackathon
+create table hackathon_sprints (
+  id uuid primary key default gen_random_uuid(),
+  hackathon_id uuid references hackathons(id) on delete cascade,
+  sprint_id uuid references sprints(id) on delete cascade,
+  primary key (hackathon_id, sprint_id)
 );
 ```
 
@@ -286,8 +388,8 @@ create table notifications (
 │   Sidebar    ├──────────────────────────────────────┤
 │   (260px)    │                                      │
 │              │         Main Content Area             │
-│  - Logo      │    (Board / Goals / Sprints / AI)     │
-│  - Search    │                                      │
+│  - Logo      │  (Board / Goals / Sprints /           │
+│  - Search    │   Hackathons / AI)                    │
 │  - Nav       │                                      │
 │  - Depts     │                                      │
 │  - Team      │                                      │
@@ -305,6 +407,7 @@ Contains:
    - Board (with urgent task count badge)
    - Goals (with active goal count)
    - Sprints (with blocked task count badge)
+   - Hackathons (with "LIVE" badge when one is active, or upcoming count)
    - AI Assistant
 4. **Departments** — All Teams, Design, Engineering, Marketing (filterable)
 5. **Team Members** — Collapsible list with avatars, online status, roles, active task counts. Click a member to filter the board to their tasks only. "Clear filter" link when active.
@@ -464,6 +567,177 @@ This is the most visual and distinctive view. It shows a **swim lane matrix** of
 
 **Implementation:** Use Anthropic Claude API. Send structured context (current board state, sprint data, goal progress) as system prompt. Use function calling for task creation/modification.
 
+### 5.8 Hackathon View
+
+Hackathons are **focused collaboration rooms** — a separate zone within TaskFlow where a team can lock in together. Think of it as a virtual war room with its own task board, idea board, chat, playlists, and sprints.
+
+#### 5.8.1 Hackathon List (Default view when clicking "Hackathons" in nav)
+
+Shows all hackathons in three sections:
+
+**LIVE NOW** (top, prominent):
+- Any hackathon with `status: 'live'` shows as a large card with a pulsing green "LIVE" indicator and glowing border
+- Shows: name, description, elapsed time (live clock), participant avatars with online dots, "Enter Room" button (primary accent, large)
+- The entire card should feel energetic — maybe a subtle animated gradient border or glow
+
+**UPCOMING** (middle):
+- Cards for scheduled hackathons, sorted by start date
+- Shows: name, theme, scheduled date/time, duration, organizer avatar, participant count, RSVP status
+- Participants see "Accepted" / "Pending" badge on their invite
+- Each card has RSVP buttons: "Accept" (green) / "Decline" (muted)
+- Organizer sees an edit button
+
+**PAST** (bottom, collapsed by default):
+- Completed hackathons with summary stats
+- Shows: name, date, duration, participant count, tasks completed, ideas generated
+- Click to view a read-only archive of the hackathon room
+
+**"+ New Hackathon" button** in the header (organizer/admin only):
+- Modal to create: name, description, theme/focus, start datetime, end datetime, invite participants (from team list)
+- Sends notification to all invited participants
+
+#### 5.8.2 Hackathon Room (The War Room)
+
+When you click "Enter Room" on a live hackathon, the **entire app transforms**. The normal sidebar and board disappear. You enter an immersive, focused environment:
+
+**Room Layout:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│  [← Exit]  🟢 LIVE  Hackathon Name       ⏱ 02:34:15  👥 6 │
+├────────┬──────────────────────────────────┬─────────────────┤
+│        │                                  │                 │
+│  Room  │       Active Tab Content         │    Chat         │
+│  Nav   │   (Tasks / Ideas / Sprints /     │    Panel        │
+│        │    Goals / Resources)            │   (always       │
+│ [Tasks]│                                  │    visible)     │
+│ [Ideas]│                                  │                 │
+│ [Sprint│                                  │                 │
+│ [Goals]│                                  │                 │
+│ [Links]│                                  │                 │
+│        │                                  │                 │
+│ ────── │                                  │                 │
+│ Particip                                  │                 │
+│ ants   │                                  │                 │
+│ (avatars                                  │                 │
+│  w/     │                                  │                 │
+│ online) │                                  │                 │
+└────────┴──────────────────────────────────┴─────────────────┘
+```
+
+**Room Header (always visible):**
+- "← Exit" button to return to main TaskFlow (with confirmation if hackathon is live)
+- Pulsing green "LIVE" badge
+- Hackathon name
+- Live timer showing elapsed time since start (HH:MM:SS, ticking in real-time)
+- Participant count with avatar stack
+- "End Hackathon" button (organizer only, requires confirmation)
+
+**Room Left Nav (icon tabs):**
+- Tasks (kanban icon)
+- Ideas (lightbulb icon)
+- Sprints (bolt icon)
+- Goals (target icon)
+- Resources (link icon)
+- Below: participant list with avatars, online status, and current active tab indicator ("Sarah is on Ideas")
+
+**Room Chat Panel (right side, always visible, ~300px wide):**
+- Real-time chat specific to this hackathon
+- Messages show avatar, name, timestamp, text
+- Support for pinning important messages (pin icon, pinned messages stick to top)
+- @mention participants with autocomplete
+- Typing indicators ("Marcus is typing...")
+- Chat messages persist so you can scroll back
+- Subtle notification sound toggle
+
+#### 5.8.3 Hackathon Task Board
+
+A simplified Kanban board scoped to the hackathon. Three columns: **To Do → In Progress → Done**
+
+- Cards are simpler than the main board: title, assignee avatar, priority badge
+- Drag & drop between columns
+- Quick-add input at the top of each column
+- Done cards trigger a mini celebration (smaller than main board confetti — maybe just a checkmark animation)
+- Tasks created here are separate from the main board (they live only in the hackathon context)
+
+#### 5.8.4 Idea Board
+
+A **freeform canvas** for brainstorming. Think virtual sticky notes:
+
+- Click anywhere on the canvas to add a sticky note
+- Notes are colored cards (yellow, pink, blue, green, purple — user picks)
+- Each note shows: content text, author avatar, vote count
+- **Voting:** Click a thumbs-up on any note to upvote. Each person gets one vote per idea. Ideas sort/glow by vote count.
+- Notes are **draggable** on the canvas — free-form positioning, not a grid
+- Can cluster related ideas together spatially
+- Optional: group notes by drawing a lasso/boundary around a cluster and naming it
+- Real-time: other participants see notes appear and move in real-time
+
+#### 5.8.5 Hackathon Sprints
+
+Participants can create **mini-sprints** within the hackathon to align on focused bursts:
+
+- Uses the same sprint data model and swim lane view from the main Sprints feature (Section 5.6)
+- Scoped to hackathon participants only
+- Shorter timeframes (hours instead of weeks)
+- Same friction detection and dependency tracking
+- Sprint can reference tasks from the hackathon task board
+
+#### 5.8.6 Hackathon Goals
+
+Quick goals for the session — simpler than main Goals:
+
+- List of goals with checkboxes
+- Drag to reorder priority
+- Each goal has a title and a done/not-done state
+- Progress count: "3/7 goals completed"
+- Visual progress bar at the top of the goals section
+- When all goals are checked off, show a celebration animation
+- Goals are visible in the room header as a compact progress indicator
+
+#### 5.8.7 Resources Panel
+
+A shared link library for the hackathon:
+
+- **Playlists:** Paste Spotify/Apple Music/YouTube Music playlist URLs. Show as embedded players or styled link cards with a play icon. Multiple playlists can be linked.
+- **Links:** Any URL — Figma files, GitHub repos, Google Docs, reference articles. Shown as rich link previews (title, favicon, domain).
+- **Type badges:** Each resource has a type badge (playlist, figma, github, doc, link)
+- Anyone in the hackathon can add resources
+- Resources persist after the hackathon ends (part of the archive)
+
+#### 5.8.8 Hackathon Lifecycle
+
+1. **Scheduled:** Organizer creates hackathon with date/time. Invites sent as notifications. Participants RSVP.
+2. **Live:** Organizer clicks "Start Hackathon" when it's time. Status flips to `live`. All accepted participants see "LIVE" badge in sidebar nav. Timer starts. Room becomes accessible.
+3. **In Progress:** Participants enter the room, collaborate on tasks/ideas/sprints. Chat is active. Real-time updates everywhere.
+4. **Completed:** Organizer clicks "End Hackathon" (with confirmation). Room becomes read-only archive. Summary stats are generated:
+   - Duration
+   - Tasks completed
+   - Ideas generated (+ most voted idea)
+   - Goals achieved
+   - Messages sent
+   - Participant engagement (who contributed most)
+
+#### 5.8.9 Hackathon Notifications
+
+- **Invite received:** "Lisa invited you to 'Q1 Product Hackathon' on Mar 15"
+- **Hackathon starting soon:** "Hackathon 'Q1 Product Hackathon' starts in 15 minutes" (push notification)
+- **Hackathon is LIVE:** "🟢 Q1 Product Hackathon is now live — Enter Room" (with direct link)
+- **Mentioned in chat:** "@You: Can you look at the auth flow idea?"
+- **All goals completed:** "All 7 goals completed in Q1 Product Hackathon!"
+
+#### 5.8.10 Design Notes for Hackathon Mode
+
+- The room should feel **distinctly different** from the normal TaskFlow interface. Consider:
+  - The hackathon's `cover_color` as an accent throughout the room
+  - A slightly darker or more saturated background to create a "focused" atmosphere
+  - Subtle animated gradient or particle effects in the room header to convey energy
+  - The LIVE badge should pulse with a green glow
+  - The elapsed timer uses Space Mono and ticks in real-time
+- When entering the room, use a **full-screen transition** animation (zoom/fade) to reinforce that you're entering a different mode
+- The "← Exit" should feel deliberate — maybe a slide-out confirmation panel ("Leave the hackathon room?")
+- Chat should feel fast and lightweight — optimistic UI, messages appear instantly before server confirms
+- Idea board should have a slightly textured/cork-board background to differentiate from the clean card UI elsewhere
+
 ---
 
 ## 6. Real-Time & Notifications
@@ -475,6 +749,12 @@ Subscribe to changes on:
 - `card_messages` table (new activity)
 - `sprint_tasks` table (status changes, blocked status)
 - `subtasks` table (completion toggle)
+- `hackathon_messages` table (live chat in hackathon rooms)
+- `hackathon_ideas` table (new ideas, votes, position changes)
+- `hackathon_tasks` table (task movement in hackathon boards)
+- `hackathon_goals` table (goal completion)
+- `hackathon_participants` table (join/leave, RSVP changes)
+- `hackathons` table (status changes: scheduled → live → completed)
 
 When another user moves a card or posts a message, it should update live without page refresh.
 
@@ -486,6 +766,11 @@ Trigger notifications for:
 - **Task blocked** — "CI/CD Pipeline is now blocked by Drag & Drop Engine"
 - **Sprint update** — "Sprint 1 is 60% complete with 3 days remaining"
 - **Task moved to Done** — "[Assignee] completed 'Design System'"
+- **Hackathon invite** — "Lisa invited you to 'Q1 Product Hackathon' on Mar 15"
+- **Hackathon starting soon** — "Hackathon starts in 15 minutes" (15 min before scheduled start)
+- **Hackathon is LIVE** — "🟢 Q1 Product Hackathon is now live — Enter Room"
+- **Hackathon chat mention** — "@You in hackathon chat: Can you look at the auth flow?"
+- **Hackathon goals complete** — "All goals completed in Q1 Product Hackathon!"
 
 Show as:
 - In-app notification bell with unread count
@@ -566,6 +851,24 @@ When adding a collaborator to a task, the user can optionally write a message. T
 - [ ] Sprint summary generation
 - [ ] Priority recommendations
 
+### Phase 8: Hackathons (Week 10–13)
+- [ ] Hackathon CRUD — create, schedule, invite participants
+- [ ] Hackathon list view (Live Now / Upcoming / Past sections)
+- [ ] RSVP system with notifications
+- [ ] Hackathon room — immersive full-screen layout with room transition animation
+- [ ] Room header with live timer (ticking clock), participant avatars, LIVE badge
+- [ ] Room chat panel — real-time messaging, @mentions, pinned messages, typing indicators
+- [ ] Hackathon task board — simplified 3-column Kanban (To Do / In Progress / Done)
+- [ ] Idea board — freeform canvas with draggable sticky notes, voting, color coding
+- [ ] Hackathon goals — checkbox list with progress bar and completion celebration
+- [ ] Resources panel — linked playlists (Spotify/YouTube embeds), Figma, GitHub, docs
+- [ ] Hackathon sprints — create mini-sprints using existing sprint infrastructure
+- [ ] Participant presence — show who's in the room, what tab they're viewing
+- [ ] Hackathon lifecycle — scheduled → live → completed flow with organizer controls
+- [ ] Post-hackathon archive — read-only room with summary stats
+- [ ] Hackathon notifications — invite, starting soon (15min), live, mentions, goals complete
+- [ ] Realtime subscriptions for all hackathon tables
+
 ---
 
 ## 8. File Structure
@@ -615,6 +918,22 @@ taskflow/
 │   │   │   ├── AssistantView.jsx
 │   │   │   ├── ChatInterface.jsx
 │   │   │   └── AmbientNudge.jsx
+│   │   ├── hackathons/
+│   │   │   ├── HackathonListView.jsx    # List of all hackathons (live/upcoming/past)
+│   │   │   ├── HackathonCard.jsx        # Card for list view (RSVP, status, etc.)
+│   │   │   ├── CreateHackathonModal.jsx # Create/schedule a new hackathon
+│   │   │   ├── HackathonRoom.jsx        # The immersive war room layout
+│   │   │   ├── RoomHeader.jsx           # Live timer, participant count, exit
+│   │   │   ├── RoomNav.jsx              # Left tab navigation within room
+│   │   │   ├── RoomChat.jsx             # Real-time chat panel (right side)
+│   │   │   ├── HackTaskBoard.jsx        # Simplified 3-column kanban
+│   │   │   ├── IdeaBoard.jsx            # Freeform sticky note canvas
+│   │   │   ├── IdeaNote.jsx             # Individual sticky note component
+│   │   │   ├── HackGoals.jsx            # Checkbox goal list with progress
+│   │   │   ├── ResourcePanel.jsx        # Playlists, links, docs
+│   │   │   ├── HackSprintView.jsx       # Mini-sprint within hackathon
+│   │   │   ├── ParticipantList.jsx      # Online participants with tab indicators
+│   │   │   └── HackathonArchive.jsx     # Read-only post-hackathon summary
 │   │   └── notifications/
 │   │       ├── NotificationBell.jsx
 │   │       └── NotificationPanel.jsx
@@ -622,6 +941,7 @@ taskflow/
 │   │   ├── boardStore.js
 │   │   ├── goalStore.js
 │   │   ├── sprintStore.js
+│   │   ├── hackathonStore.js
 │   │   ├── authStore.js
 │   │   ├── themeStore.js
 │   │   └── notificationStore.js
@@ -633,6 +953,7 @@ taskflow/
 │   │   ├── useRealtime.js
 │   │   ├── useCards.js
 │   │   ├── useSprints.js
+│   │   ├── useHackathon.js
 │   │   └── useNotifications.js
 │   ├── styles/
 │   │   ├── globals.css
@@ -670,6 +991,16 @@ taskflow/
 9. **Dependency visualization** — In sprints, hovering a task highlights tasks it blocks or is blocked by. Clicking expands to show the full dependency chain as a visual breadcrumb.
 
 10. **No tabs in the card modal** — Everything is visible at once. Subtasks and activity are always showing when you open a card. No hidden content.
+
+11. **Hackathon room is a separate world** — When entering a live hackathon, the entire UI transforms. The normal sidebar/board disappear. Use a full-screen zoom/fade transition to reinforce that you're entering a focused zone. The room should feel energetic and distinct from the rest of the app.
+
+12. **Live hackathon energy** — The LIVE badge pulses with a green glow. The elapsed timer ticks in real-time with Space Mono font. Consider a subtle animated gradient or particle effect in the room header. The hackathon's cover_color should accent the entire room.
+
+13. **Idea board texture** — The freeform idea board should have a slightly textured background (cork-board, canvas, or subtle dot grid) to differentiate it from the clean card UI. Sticky notes should feel tangible with slight rotation, drop shadows, and color variety.
+
+14. **Chat is always visible in hackathon** — The right-side chat panel stays open the entire time you're in the room. It's the team's lifeline. Make it fast with optimistic UI (messages appear before server confirms). Show typing indicators. Allow pinning important messages.
+
+15. **Hackathon exit is deliberate** — The "← Exit" button should trigger a confirmation panel ("Leave the hackathon room?") to prevent accidental exits. This reinforces the focused nature of the space.
 
 ---
 

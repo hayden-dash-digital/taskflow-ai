@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { HackathonListView } from "./hackathon";
+import { mapTheme } from "./hackathon/themeMap";
 
 /* ══════════════ DATA ══════════════ */
 const TEAM_MEMBERS = [
@@ -122,6 +124,7 @@ const I = {
   alert: (s=14,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   clock: (s=14,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
   link: (s=12,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
+  party: (s=18,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5.8 11.3L2 22l10.7-3.8M4.2 4.2l7.2 7.2"/><path d="M15 4l-3.5 3.5M18 7l-3 3"/><circle cx="19" cy="5" r="2" fill={c}/><circle cx="15" cy="3" r="1" fill={c}/></svg>,
 };
 
 /* ══════════════ THEMES ══════════════ */
@@ -644,6 +647,7 @@ export default function TaskManager() {
     { id: "goals", label: "Goals", icon: "goal", badge: "Soon" },
     { id: "sprints", label: "Sprints", icon: "sprint" },
     { id: "assistant", label: "AI Assistant", icon: "ai", badge: "Soon" },
+    { id: "hackathons", label: "Hackathons", icon: "party" },
   ];
 
   return (
@@ -796,7 +800,9 @@ export default function TaskManager() {
 
         {activeNav === "sprints" && <SprintView sprint={SAMPLE_SPRINTS[0]} t={t} dark={dark} />}
 
-        {activeNav !== "board" && activeNav !== "sprints" && (
+        {activeNav === "hackathons" && <HackathonListView t={mapTheme(t)} dark={dark} teamMembers={TEAM_MEMBERS} />}
+
+        {activeNav !== "board" && activeNav !== "sprints" && activeNav !== "hackathons" && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
             <div style={{ width: 64, height: 64, borderRadius: 16, background: t.accentLight, display: "flex", alignItems: "center", justifyContent: "center" }}>{I[navItems.find(n => n.id === activeNav)?.icon || "board"](32, t.accent)}</div>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: t.text }}>{navItems.find(n => n.id === activeNav)?.label}</h2>
