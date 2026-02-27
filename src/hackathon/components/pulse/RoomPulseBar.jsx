@@ -4,8 +4,9 @@ import usePulseStore from "../../stores/pulseStore";
 import { MOODS } from "../../constants";
 
 export default function RoomPulseBar({ t }) {
-  const todayPulses = usePulseStore((s) => s.getTodayPulses());
-  const todayAvg = usePulseStore((s) => s.getTodayAvg());
+  const store = usePulseStore();
+  const todayPulses = store.getTodayPulses();
+  const todayAvg = store.getTodayAvg();
   const todayMoodObj = MOODS[Math.round(todayAvg) - 1] || MOODS[2];
 
   return (

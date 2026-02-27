@@ -3,7 +3,8 @@ import React from "react";
 import usePulseStore from "../../stores/pulseStore";
 
 export default function ActionableSignals({ t }) {
-  const todayPulses = usePulseStore((s) => s.getTodayPulses());
+  const store = usePulseStore();
+  const todayPulses = store.getTodayPulses();
 
   // Build signal list from pulse data
   const signals = [];

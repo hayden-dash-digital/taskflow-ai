@@ -10,8 +10,9 @@ const STATUS_MAP = {
 };
 
 export default function EnergyInsight({ t }) {
-  const { showInsight, myPulse } = usePulseStore();
-  const insight = usePulseStore((s) => s.getAiInsight());
+  const store = usePulseStore();
+  const { showInsight, myPulse } = store;
+  const insight = store.getAiInsight();
 
   const statusInfo = STATUS_MAP[insight.type] || STATUS_MAP.neutral;
   const statusColor = statusInfo.color || t.tm;

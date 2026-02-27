@@ -4,8 +4,9 @@ import usePulseStore from "../../stores/pulseStore";
 import { WLOAD_LABELS } from "../../constants";
 
 export default function RoomCheckinPanel({ t }) {
-  const todayPulses = usePulseStore((s) => s.getTodayPulses());
-  const blockerText = usePulseStore((s) => s.blockerText);
+  const store = usePulseStore();
+  const todayPulses = store.getTodayPulses();
+  const blockerText = store.blockerText;
 
   return (
     <div

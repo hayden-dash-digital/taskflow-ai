@@ -5,9 +5,10 @@ import { MOODS, WLOAD_LABELS } from "../../constants";
 import PulseUserRow from "./PulseUserRow";
 
 export default function TeamPulse({ t }) {
-  const { expandUser, setExpandUser, pulseLogged, blockerText } = usePulseStore();
-  const todayPulses = usePulseStore((s) => s.getTodayPulses());
-  const todayAvg = usePulseStore((s) => s.getTodayAvg());
+  const store = usePulseStore();
+  const { expandUser, setExpandUser, pulseLogged, blockerText } = store;
+  const todayPulses = store.getTodayPulses();
+  const todayAvg = store.getTodayAvg();
 
   const avgMood = todayAvg > 0 ? MOODS[Math.round(todayAvg) - 1] : null;
   const overloaded = todayPulses.filter((p) => p.wl === "overwhelming").length;
