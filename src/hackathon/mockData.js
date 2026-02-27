@@ -11,6 +11,42 @@ export const TEAM = [
 
 export const u = (id) => TEAM.find((m) => m.id === id);
 
+/* ═══ PULSE / ENERGY MOCK DATA ═══ */
+export const PULSE_USERS = [
+  { id: "u1", name: "Alex Chen", role: "Lead", color: "#5B4AE4", avatar: "AC" },
+  { id: "u2", name: "Sarah Kim", role: "Designer", color: "#EC4899", avatar: "SK" },
+  { id: "u3", name: "Marcus Johnson", role: "Backend", color: "#F97316", avatar: "MJ" },
+  { id: "u4", name: "Aisha Patel", role: "Frontend", color: "#22C55E", avatar: "AP" },
+  { id: "u5", name: "Jordan Lee", role: "PM", color: "#3B82F6", avatar: "JL" },
+];
+
+export const PRESET_PULSES = { u2: 4, u3: 5, u4: 2, u5: 3 };
+export const PRESET_WORKLOAD = { u2: "balanced", u3: "heavy", u4: "overwhelming", u5: "balanced" };
+export const PRESET_BLOCKERS = { u2: "none", u3: "none", u4: "waiting", u5: "none" };
+export const PRESET_FOCUS = {
+  u2: "Finishing the onboarding mockups",
+  u3: "API endpoints for sprint view",
+  u4: "Waiting on design tokens from Sarah",
+  u5: "Sprint planning for next week",
+};
+
+export const genHistory = () => {
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const label = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const short = d.toLocaleDateString("en-US", { weekday: "short" });
+    const pulses = PULSE_USERS.map((pu) => ({
+      userId: pu.id,
+      value: Math.max(1, Math.min(5, Math.round(3 + (Math.random() - 0.4) * 2.5 + (i < 4 ? -0.8 : i > 10 ? 0.5 : 0)))),
+    }));
+    const avg = pulses.reduce((s, p) => s + p.value, 0) / pulses.length;
+    const tasks = Math.round(3 + Math.random() * 6 + (avg > 3.5 ? 2 : avg < 2.5 ? -1 : 0));
+    days.push({ date: label, short, pulses, avg: Math.round(avg * 10) / 10, tasks });
+  }
+  return days;
+};
+
 export const HACKS = [
   {
     id: "h1", name: "MVP Launch Blitz",
